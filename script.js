@@ -47,14 +47,14 @@ function checkWin(player) {
   return false;
 }
 
-// --- AI THÔNG MINH NÂNG CẤP ---
+// --- AI THÔNG MINH ---
 function aiMove() {
   if (gameOver) return;
 
-  let move = findWinningMove("O"); // Ưu tiên thắng
-  if (!move) move = findWinningMove("X"); // Chặn người chơi thắng
-  if (!move) move = findBestMove(); // Tìm nước đi tốt nhất
-  
+  let move = findSmartMove();
+  if (!move) move = findNearPlayer();
+  if (!move) move = findAnyMove();
+
   if (move) {
     document.querySelectorAll(".ai-highlight").forEach(c => c.classList.remove("ai-highlight"));
     board[move.i][move.j] = "O";
@@ -70,13 +70,16 @@ function aiMove() {
   }
 }
 
-// --- TÌM NƯỚC ĐI THẮNG NGAY ---
-function findWinningMove(player) {
+// --- TÌM NƯỚC ĐI THÔNG MINH ---
+function findSmartMove() {
+  let bestMove = null;
+
+  // 1️⃣ AI có thể thắng ngay => đánh luôn
   for (let i = 0; i < boardSize; i++) {
     for (let j = 0; j < boardSize; j++) {
       if (board[i][j] === "") {
-        board[i][j] = player;
-        if (checkWin(player)) {
+        board[i][j] = "O";
+        if (checkWin("O")) {
           board[i][j] = "";
           return { i, j };
         }
@@ -84,171 +87,106 @@ function findWinningMove(player) {
       }
     }
   }
-  return null;
-}
 
-// --- TÌM NƯỚC ĐI TỐT NHẤT ---
-function findBestMove() {
-  let bestScore = -Infinity;
-  let bestMoves = [];
-  
-  // Tìm tất cả nước đi có thể và đánh giá
+  // 2️⃣ Chặn người chơi nếu sắp thắng
   for (let i = 0; i < boardSize; i++) {
     for (let j = 0; j < boardSize; j++) {
-      if (board[i][j] === "" && hasNeighbor(i, j)) {
-        const score = evaluateMove(i, j);
-        if (score > bestScore) {
-          bestScore = score;
-          bestMoves = [{ i, j }];
-        } else if (score === bestScore) {
-          bestMoves.push({ i, j });
+      if (board[i][j] === "") {
+        board[i][j] = "X";
+        if (checkWin("X")) {
+          board[i][j] = "";
+          return { i, j };
+        }
+        board[i][j] = "";
+      }
+    }
+  }
+
+  // 3️⃣ Đánh nước tốt nhất
+  let bestScore = -Infinity;
+  for (let i = 0; i < boardSize; i++) {
+    for (let j = 0; j < boardSize; j++) {
+      if (board[i][j] === "") {
+        const scoreO = evaluatePosition(i, j, "O");
+        const scoreX = evaluatePosition(i, j, "X");
+        const total = scoreO + scoreX * 0.9;
+        if (total > bestScore) {
+          bestScore = total;
+          bestMove = { i, j };
         }
       }
     }
   }
-  
-  // Nếu có nhiều nước đi cùng điểm, chọn ngẫu nhiên để tránh pattern
-  if (bestMoves.length > 0) {
-    return bestMoves[Math.floor(Math.random() * bestMoves.length)];
-  }
-  
-  // Nếu không tìm thấy nước đi tốt, tìm bất kỳ nước đi nào
-  return findAnyMove();
+  return bestMove;
 }
 
-// --- KIỂM TRA Ô CÓ QUAN TRỌNG KHÔNG ---
-function hasNeighbor(i, j, distance = 2) {
-  for (let dx = -distance; dx <= distance; dx++) {
-    for (let dy = -distance; dy <= distance; dy++) {
-      if (dx === 0 && dy === 0) continue;
-      const ni = i + dx;
-      const nj = j + dy;
-      if (ni >= 0 && ni < boardSize && nj >= 0 && nj < boardSize && board[ni][nj] !== "") {
-        return true;
+// --- ĐÁNH GIÁ VỊ TRÍ ---
+function evaluatePosition(x, y, player) {
+  const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+  let score = 0;
+  for (let [dx, dy] of dirs) {
+    let count = 0, openEnds = 0;
+    let i = 1;
+    while (true) {
+      const nx = x + dx * i, ny = y + dy * i;
+      if (nx < 0 || ny < 0 || nx >= boardSize || ny >= boardSize) break;
+      if (board[nx][ny] === player) count++;
+      else if (board[nx][ny] === "") { openEnds++; break; }
+      else break;
+      i++;
+    }
+    i = 1;
+    while (true) {
+      const nx = x - dx * i, ny = y - dy * i;
+      if (nx < 0 || ny < 0 || nx >= boardSize || ny >= boardSize) break;
+      if (board[nx][ny] === player) count++;
+      else if (board[nx][ny] === "") { openEnds++; break; }
+      else break;
+      i++;
+    }
+    if (count >= 4) score += 10000;
+    else if (count === 3 && openEnds === 2) score += 1000;
+    else if (count === 3 && openEnds === 1) score += 200;
+    else if (count === 2 && openEnds === 2) score += 100;
+    else if (count === 2 && openEnds === 1) score += 30;
+    else if (count === 1 && openEnds === 2) score += 10;
+  }
+  return score;
+}
+
+// --- ĐÁNH GẦN NGƯỜI CHƠI ---
+function findNearPlayer() {
+  const last = getLastPlayerMove();
+  if (!last) return null;
+  const { x, y } = last;
+  const range = 2;
+  for (let r = 1; r <= range; r++) {
+    for (let i = x - r; i <= x + r; i++) {
+      for (let j = y - r; j <= y + r; j++) {
+        if (i >= 0 && j >= 0 && i < boardSize && j < boardSize && board[i][j] === "")
+          return { i, j };
       }
     }
   }
-  return false;
+  return null;
 }
 
-// --- ĐÁNH GIÁ NƯỚC ĐI ---
-function evaluateMove(x, y) {
-  let score = 0;
-  
-  // Đánh giá cho AI (O)
-  score += evaluateLine(x, y, "O") * 10;
-  
-  // Đánh giá cho người chơi (X) - phòng thủ
-  score += evaluateLine(x, y, "X") * 9;
-  
-  // Ưu tiên trung tâm
-  const center = boardSize / 2;
-  const distanceFromCenter = Math.sqrt(Math.pow(x - center, 2) + Math.pow(y - center, 2));
-  score += (boardSize - distanceFromCenter) * 0.1;
-  
-  return score;
-}
-
-// --- ĐÁNH GIÁ THEO HƯỚNG ---
-function evaluateLine(x, y, player) {
-  const dirs = [[1,0],[0,1],[1,1],[1,-1]];
-  let totalScore = 0;
-  
-  for (let [dx, dy] of dirs) {
-    totalScore += evaluateDirection(x, y, dx, dy, player);
-  }
-  
-  return totalScore;
-}
-
-// --- ĐÁNH GIÁ THEO HƯỚNG CỤ THỂ ---
-function evaluateDirection(x, y, dx, dy, player) {
-  let score = 0;
-  let count = 0; // Số quân liên tiếp
-  let openEnds = 0; // Số đầu mở
-  
-  // Đếm về phía trước
-  for (let i = 1; i <= 4; i++) {
-    const nx = x + dx * i;
-    const ny = y + dy * i;
-    if (nx < 0 || ny < 0 || nx >= boardSize || ny >= boardSize) break;
-    
-    if (board[nx][ny] === player) {
-      count++;
-    } else if (board[nx][ny] === "") {
-      openEnds++;
-      break;
-    } else {
-      break;
+function getLastPlayerMove() {
+  for (let i = boardSize - 1; i >= 0; i--) {
+    for (let j = boardSize - 1; j >= 0; j--) {
+      if (board[i][j] === "X") return { x: i, y: j };
     }
   }
-  
-  // Đếm về phía sau
-  for (let i = 1; i <= 4; i++) {
-    const nx = x - dx * i;
-    const ny = y - dy * i;
-    if (nx < 0 || ny < 0 || nx >= boardSize || ny >= boardSize) break;
-    
-    if (board[nx][ny] === player) {
-      count++;
-    } else if (board[nx][ny] === "") {
-      openEnds++;
-      break;
-    } else {
-      break;
-    }
-  }
-  
-  // Đánh giá dựa trên số quân liên tiếp và đầu mở
-  if (count >= 4) score += 100000; // 5 quân liên tiếp - chiến thắng
-  else if (count === 3) {
-    if (openEnds === 2) score += 10000; // 4 quân mở 2 đầu - cực kỳ nguy hiểm
-    else if (openEnds === 1) score += 1000; // 4 quân mở 1 đầu - rất nguy hiểm
-  } else if (count === 2) {
-    if (openEnds === 2) score += 500; // 3 quân mở 2 đầu - nguy hiểm
-    else if (openEnds === 1) score += 100; // 3 quân mở 1 đầu - tiềm năng
-  } else if (count === 1) {
-    if (openEnds === 2) score += 50; // 2 quân mở 2 đầu - có tiềm năng
-    else if (openEnds === 1) score += 10; // 2 quân mở 1 đầu - ít giá trị
-  }
-  
-  // Thêm điểm cho các mô hình đặc biệt
-  if (player === "O") {
-    // AI ưu tiên tấn công
-    if (count === 2 && openEnds === 2) score += 200;
-  } else {
-    // Phòng thủ chống lại người chơi
-    if (count === 2 && openEnds === 2) score += 300;
-  }
-  
-  return score;
+  return null;
 }
 
-// --- TÌM NƯỚC ĐI BẤT KỲ ---
 function findAnyMove() {
-  // Ưu tiên trung tâm nếu bàn cờ trống
-  if (isBoardEmpty()) {
-    const center = Math.floor(boardSize / 2);
-    return { i: center, j: center };
-  }
-  
-  // Tìm ô trống bất kỳ
   for (let i = 0; i < boardSize; i++) {
     for (let j = 0; j < boardSize; j++) {
       if (board[i][j] === "") return { i, j };
     }
   }
   return null;
-}
-
-// --- KIỂM TRA BÀN CỜ TRỐNG ---
-function isBoardEmpty() {
-  for (let i = 0; i < boardSize; i++) {
-    for (let j = 0; j < boardSize; j++) {
-      if (board[i][j] !== "") return false;
-    }
-  }
-  return true;
 }
 
 // --- HIỂN THỊ ---
