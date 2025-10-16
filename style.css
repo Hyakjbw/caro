@@ -1,0 +1,100 @@
+body {
+  background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+  color: white;
+  font-family: 'Segoe UI', sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: start;
+  height: 100vh;
+  margin: 0;
+  overflow-y: scroll;
+}
+
+.container {
+  text-align: center;
+  margin-top: 20px;
+}
+
+h1 {
+  margin-bottom: 15px;
+  text-shadow: 0 0 10px #00eaff;
+}
+
+.game-area {
+  width: 90vmin;
+  height: 90vmin;
+  max-width: 800px;
+  max-height: 800px;
+  border: 3px solid #00eaff;
+  border-radius: 10px;
+  overflow: auto;
+  background-color: #111;
+  margin: auto;
+}
+
+#board {
+  display: grid;
+  grid-template-columns: repeat(20, 40px);
+  grid-template-rows: repeat(20, 40px);
+  width: 800px;
+  height: 800px;
+}
+
+.cell {
+  border: 1px solid #333;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.cell.x {
+  color: #ff4f6d;
+  text-shadow: 0 0 6px #ff4f6d;
+}
+
+.cell.o {
+  color: #00eaff;
+  text-shadow: 0 0 6px #00eaff;
+}
+
+.controls {
+  margin-top: 10px;
+}
+
+button {
+  background: #00eaff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: 0.3s;
+}
+
+button:hover {
+  background: #009ecf;
+}
+
+footer {
+  margin-top: 15px;
+  font-size: 13px;
+  opacity: 0.7;
+}
+.cell.ai-highlight {
+  background-color: rgba(0, 234, 255, 0.25);
+  box-shadow: 0 0 10px #00eaff;
+  transition: background-color 0.5s, box-shadow 0.5s;
+}
+.cell.hint {
+  background-color: rgba(255, 255, 100, 0.3);
+  box-shadow: 0 0 10px yellow;
+  animation: hintBlink 1s infinite alternate;
+}
+
+@keyframes hintBlink {
+  from { box-shadow: 0 0 5px yellow; }
+  to { box-shadow: 0 0 15px yellow; }
+}
