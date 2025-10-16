@@ -20,7 +20,7 @@ for (let i = 0; i < boardSize * boardSize; i++) {
   boardEl.appendChild(cell);
 }
 
-// --- KIỂM TRA THẮNG NÂNG CẤP ---
+// --- KIỂM TRA THẮNG CHÍNH XÁC TUYỆT ĐỐI ---
 function checkWin(player) {
   const dirs = [[1,0],[0,1],[1,1],[1,-1]];
   
@@ -30,8 +30,8 @@ function checkWin(player) {
       
       for (let [dx, dy] of dirs) {
         let count = 1;
-        // Kiểm tra 5 ô liên tiếp
-        for (let k = 1; k < 5; k++) {
+        // Đếm liên tiếp
+        for (let k = 1; k <= 4; k++) {
           const ni = i + dx * k;
           const nj = j + dy * k;
           if (ni < 0 || nj < 0 || ni >= boardSize || nj >= boardSize) break;
@@ -45,120 +45,266 @@ function checkWin(player) {
   return false;
 }
 
-// --- AI THÔNG MINH CẤP CAO ---
+// --- AI THẦN THÁNH ---
 function aiMove() {
   if (gameOver || aiThinking) return;
   
   aiThinking = true;
-  statusEl.textContent = "🤖 AI đang suy nghĩ...";
+  statusEl.textContent = "🤖 AI đang tính toán thế cờ...";
   
-  // Sử dụng setTimeout để không block UI
   setTimeout(() => {
     let move;
     
-    // Giai đoạn đầu game - đánh nhanh
-    if (getMoveCount() < 4) {
-      move = findOpeningMove();
+    const moveCount = getMoveCount();
+    
+    if (moveCount === 0) {
+      // Nước đầu: luôn đánh trung tâm
+      move = { i: Math.floor(boardSize/2), j: Math.floor(boardSize/2) };
+    } else if (moveCount === 1) {
+      // Nước thứ 2: đánh chéo trung tâm
+      move = findBestSecondMove();
+    } else if (moveCount <= 6) {
+      // Giai đoạn khai cuộc: sử dụng sách khai cuộc
+      move = findOpeningBookMove();
     } else {
-      // Giai đoạn giữa và cuối - sử dụng Minimax
-      move = findBestMoveWithMinimax(2); // Độ sâu 2
+      // Giai đoạn trung cuộc và tàn cuộc: Minimax sâu
+      move = findBestMoveWithMinimax(3);
+    }
+    
+    // Fallback: nếu không tìm được nước đi tối ưu
+    if (!move) {
+      move = findCriticalMove();
     }
     
     if (move) {
-      document.querySelectorAll(".ai-highlight").forEach(c => c.classList.remove("ai-highlight"));
-      board[move.i][move.j] = "O";
-      lastAIMove = move;
-      render();
-      
-      if (checkWin("O")) {
-        statusEl.textContent = "🤖 AI thắng! Không thể chống lại trí tuệ nhân tạo!";
-        gameOver = true;
-        loseAudio.currentTime = 0;
-        loseAudio.play();
-      } else {
-        statusEl.textContent = "Lượt của bạn!";
-      }
+      executeMove(move);
     }
     
     aiThinking = false;
-  }, 100);
+  }, 150);
 }
 
-// --- ĐẾM SỐ NƯỚC ĐI ---
-function getMoveCount() {
-  let count = 0;
+// --- SÁCH KHAI CUỘC ---
+function findOpeningBookMove() {
+  const center = Math.floor(boardSize / 2);
+  const moves = [];
+  
+  // Pattern phòng thủ tấn công
+  const patterns = [
+    // Chặn các thế cờ nguy hiểm
+    { condition: () => findImmediateThreat("X"), response: findWinningMove("O") || findWinningMove("X") },
+    // Tạo thế tấn công
+    { condition: () => findDoubleThreeThreat("O"), response: findDoubleThreeThreat("O") },
+    // Phòng thủ chủ động
+    { condition: () => findDoubleThreeThreat("X"), response: findDoubleThreeThreat("X") },
+    // Đánh vào vị trí chiến lược
+    { condition: () => true, response: findStrategicMove() }
+  ];
+  
+  for (let pattern of patterns) {
+    const move = pattern.condition();
+    if (move) return move;
+  }
+  
+  return findStrategicMove();
+}
+
+// --- TÌM NƯỚC ĐI CHIẾN LƯỢC ---
+function findStrategicMove() {
+  // Ưu tiên theo thứ tự: thắng -> chặn thắng -> tạo đe dọa kép -> phòng thủ -> tấn công
+  let move = findWinningMove("O");
+  if (move) return move;
+  
+  move = findWinningMove("X");
+  if (move) return move;
+  
+  move = findDoubleThreat("O");
+  if (move) return move;
+  
+  move = findDoubleThreat("X");
+  if (move) return move;
+  
+  move = findThreeThreeThreat("O");
+  if (move) return move;
+  
+  move = findThreeThreeThreat("X");
+  if (move) return move;
+  
+  move = findFourThreeThreat("O");
+  if (move) return move;
+  
+  move = findFourThreeThreat("X");
+  if (move) return move;
+  
+  return findHighestScoredMove();
+}
+
+// --- TÌM MỐI ĐE DỌA 3-3 (CỰC KỲ NGUY HIỂM) ---
+function findThreeThreeThreat(player) {
   for (let i = 0; i < boardSize; i++) {
     for (let j = 0; j < boardSize; j++) {
-      if (board[i][j] !== "") count++;
+      if (board[i][j] === "" && hasNeighbor(i, j)) {
+        board[i][j] = player;
+        const threeCount = countThreeInRow(player);
+        board[i][j] = "";
+        if (threeCount >= 2) {
+          return { i, j };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+// --- TÌM MỐI ĐE DỌA 4-3 ---
+function findFourThreeThreat(player) {
+  for (let i = 0; i < boardSize; i++) {
+    for (let j = 0; j < boardSize; j++) {
+      if (board[i][j] === "" && hasNeighbor(i, j)) {
+        board[i][j] = player;
+        const hasFour = hasOpenFour(player);
+        const threeCount = countThreeInRow(player);
+        board[i][j] = "";
+        if (hasFour && threeCount >= 1) {
+          return { i, j };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+// --- ĐẾM SỐ HÀNG 3 MỞ ---
+function countThreeInRow(player) {
+  let count = 0;
+  const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+  
+  for (let i = 0; i < boardSize; i++) {
+    for (let j = 0; j < boardSize; j++) {
+      if (board[i][j] === player) {
+        for (let [dx, dy] of dirs) {
+          if (isOpenThree(i, j, dx, dy, player)) {
+            count++;
+          }
+        }
+      }
     }
   }
   return count;
 }
 
-// --- NƯỚC ĐI KHAI CUỘC THÔNG MINH ---
-function findOpeningMove() {
-  const center = Math.floor(boardSize / 2);
+// --- KIỂM TRA HÀNG 3 MỞ ---
+function isOpenThree(x, y, dx, dy, player) {
+  let count = 1;
+  let openEnds = 0;
   
-  // Nếu bàn cờ trống, đánh trung tâm
-  if (getMoveCount() === 0) {
-    return { i: center, j: center };
+  // Kiểm tra hướng thuận
+  for (let k = 1; k <= 3; k++) {
+    const nx = x + dx * k;
+    const ny = y + dy * k;
+    if (nx < 0 || ny < 0 || nx >= boardSize || ny >= boardSize) break;
+    if (board[nx][ny] === player) count++;
+    else if (board[nx][ny] === "") { openEnds++; break; }
+    else break;
   }
   
-  // Nếu người chơi đánh trung tâm, đánh chéo
-  if (board[center][center] === "X") {
-    const moves = [
-      {i: center-1, j: center-1}, {i: center-1, j: center+1},
-      {i: center+1, j: center-1}, {i: center+1, j: center+1}
-    ].filter(move => 
-      move.i >= 0 && move.i < boardSize && 
-      move.j >= 0 && move.j < boardSize && 
-      board[move.i][move.j] === ""
-    );
-    if (moves.length > 0) return moves[Math.floor(Math.random() * moves.length)];
+  // Kiểm tra hướng nghịch
+  for (let k = 1; k <= 3; k++) {
+    const nx = x - dx * k;
+    const ny = y - dy * k;
+    if (nx < 0 || ny < 0 || nx >= boardSize || ny >= boardSize) break;
+    if (board[nx][ny] === player) count++;
+    else if (board[nx][ny] === "") { openEnds++; break; }
+    else break;
   }
   
-  // Tìm nước đi tốt nhất trong khai cuộc
-  return findBestMove();
+  return count === 3 && openEnds === 2;
 }
 
-// --- THUẬT TOÁN MINIMAX ---
+// --- KIỂM TRA HÀNG 4 MỞ ---
+function hasOpenFour(player) {
+  for (let i = 0; i < boardSize; i++) {
+    for (let j = 0; j < boardSize; j++) {
+      if (board[i][j] === player) {
+        const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+        for (let [dx, dy] of dirs) {
+          if (isOpenFour(i, j, dx, dy, player)) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function isOpenFour(x, y, dx, dy, player) {
+  let count = 1;
+  let openEnds = 0;
+  
+  for (let k = 1; k <= 4; k++) {
+    const nx = x + dx * k;
+    const ny = y + dy * k;
+    if (nx < 0 || ny < 0 || nx >= boardSize || ny >= boardSize) break;
+    if (board[nx][ny] === player) count++;
+    else if (board[nx][ny] === "") { openEnds++; break; }
+    else break;
+  }
+  
+  for (let k = 1; k <= 4; k++) {
+    const nx = x - dx * k;
+    const ny = y - dy * k;
+    if (nx < 0 || ny < 0 || nx >= boardSize || ny >= boardSize) break;
+    if (board[nx][ny] === player) count++;
+    else if (board[nx][ny] === "") { openEnds++; break; }
+    else break;
+  }
+  
+  return count === 4 && openEnds >= 1;
+}
+
+// --- MINIMAX NÂNG CAO ---
 function findBestMoveWithMinimax(depth) {
   let bestScore = -Infinity;
   let bestMove = null;
+  let alpha = -Infinity;
+  let beta = Infinity;
   
-  const possibleMoves = getPossibleMoves();
+  const possibleMoves = getPriorityMoves();
   
   for (let move of possibleMoves) {
     board[move.i][move.j] = "O";
-    const score = minimax(depth - 1, -Infinity, Infinity, false);
+    const score = minimax(depth - 1, alpha, beta, false, -Infinity, Infinity);
     board[move.i][move.j] = "";
     
     if (score > bestScore) {
       bestScore = score;
       bestMove = move;
     }
+    
+    alpha = Math.max(alpha, bestScore);
+    if (beta <= alpha) break;
   }
   
-  return bestMove || findBestMove();
+  return bestMove;
 }
 
-function minimax(depth, alpha, beta, isMaximizing) {
-  // Kiểm tra kết thúc game hoặc đạt độ sâu tối đa
+function minimax(depth, alpha, beta, isMaximizing, worstCase, bestCase) {
   if (depth === 0) {
-    return evaluateBoard();
+    return evaluateBoardAdvanced();
   }
   
-  if (checkWin("O")) return 100000;
-  if (checkWin("X")) return -100000;
+  if (checkWin("O")) return 1000000 - (3 - depth); // Ưu tiên thắng sớm
+  if (checkWin("X")) return -1000000 + (3 - depth); // Tránh thua sớm
   
-  const possibleMoves = getPossibleMoves();
+  const possibleMoves = getPriorityMoves();
   if (possibleMoves.length === 0) return 0;
   
   if (isMaximizing) {
     let maxScore = -Infinity;
     for (let move of possibleMoves) {
       board[move.i][move.j] = "O";
-      const score = minimax(depth - 1, alpha, beta, false);
+      const score = minimax(depth - 1, alpha, beta, false, worstCase, bestCase);
       board[move.i][move.j] = "";
       maxScore = Math.max(maxScore, score);
       alpha = Math.max(alpha, score);
@@ -169,7 +315,7 @@ function minimax(depth, alpha, beta, isMaximizing) {
     let minScore = Infinity;
     for (let move of possibleMoves) {
       board[move.i][move.j] = "X";
-      const score = minimax(depth - 1, alpha, beta, true);
+      const score = minimax(depth - 1, alpha, beta, true, worstCase, bestCase);
       board[move.i][move.j] = "";
       minScore = Math.min(minScore, score);
       beta = Math.min(beta, score);
@@ -179,34 +325,46 @@ function minimax(depth, alpha, beta, isMaximizing) {
   }
 }
 
-// --- LẤY CÁC NƯỚC ĐI CÓ THỂ ---
-function getPossibleMoves() {
+// --- LẤY NƯỚC ĐI ƯU TIÊN ---
+function getPriorityMoves() {
   const moves = [];
-  const searchRadius = 2;
+  const urgentMoves = [];
   
+  // Tìm các nước đi khẩn cấp trước
   for (let i = 0; i < boardSize; i++) {
     for (let j = 0; j < boardSize; j++) {
-      if (board[i][j] === "" && hasNeighbor(i, j, searchRadius)) {
-        moves.push({ i, j, score: evaluatePosition(i, j) });
+      if (board[i][j] === "" && hasNeighbor(i, j, 3)) {
+        const score = evaluatePositionAdvanced(i, j);
+        
+        // Phân loại độ ưu tiên
+        if (score > 50000) {
+          urgentMoves.unshift({ i, j, score }); // Cực kỳ khẩn cấp
+        } else if (score > 10000) {
+          urgentMoves.push({ i, j, score }); // Khẩn cấp
+        } else {
+          moves.push({ i, j, score });
+        }
       }
     }
   }
   
-  // Sắp xếp theo điểm số để tối ưu alpha-beta pruning
-  moves.sort((a, b) => b.score - a.score);
-  return moves.slice(0, 10); // Giới hạn số nước đi xét
+  // Kết hợp và sắp xếp
+  const allMoves = [...urgentMoves, ...moves];
+  allMoves.sort((a, b) => b.score - a.score);
+  
+  return allMoves.slice(0, 8); // Giới hạn để tối ưu
 }
 
-// --- ĐÁNH GIÁ BÀN CỜ ---
-function evaluateBoard() {
+// --- ĐÁNH GIÁ BÀN CỜ NÂNG CAO ---
+function evaluateBoardAdvanced() {
   let score = 0;
   
   for (let i = 0; i < boardSize; i++) {
     for (let j = 0; j < boardSize; j++) {
       if (board[i][j] === "O") {
-        score += evaluatePosition(i, j, "O");
+        score += evaluatePositionAdvanced(i, j, "O");
       } else if (board[i][j] === "X") {
-        score -= evaluatePosition(i, j, "X");
+        score -= evaluatePositionAdvanced(i, j, "X") * 1.1; // Phòng thủ nghiêm ngặt hơn
       }
     }
   }
@@ -214,54 +372,131 @@ function evaluateBoard() {
   return score;
 }
 
-// --- TÌM NƯỚC ĐI TỐT NHẤT (DÙNG KHI MINIMAX KHÔNG ÁP DỤNG) ---
-function findBestMove() {
-  // 1. Thắng ngay nếu có thể
-  let move = findWinningMove("O");
-  if (move) return move;
+// --- ĐÁNH GIÁ VỊ TRÍ SIÊU CHI TIẾT ---
+function evaluatePositionAdvanced(x, y, player = "O") {
+  if (player === "X") {
+    // Đánh giá phòng thủ nghiêm ngặt hơn
+    return evaluatePositionAdvanced(x, y, "O") * 1.2;
+  }
   
-  // 2. Chặn người chơi thắng
-  move = findWinningMove("X");
-  if (move) return move;
+  let totalScore = 0;
+  const dirs = [[1,0],[0,1],[1,1],[1,-1]];
   
-  // 3. Tạo cơ hội thắng kép
-  move = findDoubleThreat("O");
-  if (move) return move;
+  for (let [dx, dy] of dirs) {
+    const pattern = getPattern(x, y, dx, dy, 4);
+    totalScore += evaluatePattern(pattern, player);
+  }
   
-  // 4. Chặn cơ hội thắng kép của đối thủ
-  move = findDoubleThreat("X");
-  if (move) return move;
+  // Thêm điểm chiến lược
+  totalScore += getStrategicValue(x, y);
   
-  // 5. Tìm nước đi có điểm số cao nhất
-  return findHighestScoredMove();
+  return totalScore;
 }
 
-// --- TÌM NƯỚC ĐI THẮNG ---
-function findWinningMove(player) {
-  for (let i = 0; i < boardSize; i++) {
-    for (let j = 0; j < boardSize; j++) {
-      if (board[i][j] === "") {
-        board[i][j] = player;
-        if (checkWin(player)) {
-          board[i][j] = "";
-          return { i, j };
-        }
-        board[i][j] = "";
-      }
+function getPattern(x, y, dx, dy, radius) {
+  let pattern = "";
+  for (let k = -radius; k <= radius; k++) {
+    const ni = x + dx * k;
+    const nj = y + dy * k;
+    
+    if (ni < 0 || nj < 0 || ni >= boardSize || nj >= boardSize) {
+      pattern += "#"; // Biên
+    } else if (ni === x && nj === y) {
+      pattern += "C"; // Vị trí trung tâm
+    } else {
+      pattern += board[ni][nj] === "" ? "." : board[ni][nj];
     }
   }
+  return pattern;
+}
+
+function evaluatePattern(pattern, player) {
+  const opponent = player === "O" ? "X" : "O";
+  
+  // Thay thế ký tự để dễ so khớp
+  const centerPattern = pattern.replace("C", player);
+  
+  const patterns = {
+    // Chiến thắng
+    "OOOOO": 1000000,
+    // Hàng 4 mở
+    ".OOOO.": 50000,
+    // Hàng 4 nửa mở
+    "XOOOO.": 10000,
+    ".OOOOX": 10000,
+    // Hàng 3 mở
+    ".OOO.": 5000,
+    // Hàng 3 nửa mở
+    "XOOO.": 1000,
+    ".OOOX": 1000,
+    // Đe dọa kép
+    "OO.OO": 8000,
+    "O.OO.O": 6000,
+    // Phòng thủ cực mạnh
+    [`${opponent}${opponent}${opponent}${opponent}.`]: 40000,
+    [`.${opponent}${opponent}${opponent}${opponent}`]: 40000,
+    [`${opponent}${opponent}${opponent}.${opponent}`]: 30000,
+  };
+  
+  let score = 0;
+  for (let [key, value] of Object.entries(patterns)) {
+    if (centerPattern.includes(key)) {
+      score += value;
+    }
+  }
+  
+  return score;
+}
+
+function getStrategicValue(x, y) {
+  // Ưu tiên trung tâm và các vị trí chiến lược
+  const center = boardSize / 2;
+  const distanceFromCenter = Math.abs(x - center) + Math.abs(y - center);
+  
+  // Điểm trung tâm cao nhất, giảm dần ra biên
+  return (boardSize - distanceFromCenter) * 10;
+}
+
+// --- CÁC HÀM HỖ TRỢ ---
+function findBestSecondMove() {
+  const center = Math.floor(boardSize / 2);
+  const moves = [
+    {i: center-1, j: center-1}, {i: center-1, j: center+1},
+    {i: center+1, j: center-1}, {i: center+1, j: center+1}
+  ].filter(move => 
+    isValidMove(move.i, move.j) && board[move.i][move.j] === ""
+  );
+  
+  return moves.length > 0 ? moves[Math.floor(Math.random() * moves.length)] : findStrategicMove();
+}
+
+function findCriticalMove() {
+  // Tìm nước đi quan trọng nhất trong tình huống khẩn cấp
+  const moves = [
+    () => findWinningMove("O"),
+    () => findWinningMove("X"),
+    () => findDoubleThreat("O"),
+    () => findDoubleThreat("X"),
+    () => findHighestScoredMove(),
+    () => findAnyMove()
+  ];
+  
+  for (let moveFinder of moves) {
+    const move = moveFinder();
+    if (move) return move;
+  }
+  
   return null;
 }
 
-// --- TÌM ĐE DỌA KÉP (DOUBLE THREAT) ---
 function findDoubleThreat(player) {
   for (let i = 0; i < boardSize; i++) {
     for (let j = 0; j < boardSize; j++) {
-      if (board[i][j] === "") {
+      if (board[i][j] === "" && hasNeighbor(i, j)) {
         board[i][j] = player;
-        const threatCount = countWinningThreats(player);
+        const threats = countImmediateThreats(player);
         board[i][j] = "";
-        if (threatCount >= 2) {
+        if (threats >= 2) {
           return { i, j };
         }
       }
@@ -270,8 +505,7 @@ function findDoubleThreat(player) {
   return null;
 }
 
-// --- ĐẾM SỐ ĐE DỌA THẮNG ---
-function countWinningThreats(player) {
+function countImmediateThreats(player) {
   let count = 0;
   for (let i = 0; i < boardSize; i++) {
     for (let j = 0; j < boardSize; j++) {
@@ -285,15 +519,30 @@ function countWinningThreats(player) {
   return count;
 }
 
-// --- TÌM NƯỚC ĐI ĐIỂM CAO NHẤT ---
+function findWinningMove(player) {
+  for (let i = 0; i < boardSize; i++) {
+    for (let j = 0; j < boardSize; j++) {
+      if (board[i][j] === "" && hasNeighbor(i, j)) {
+        board[i][j] = player;
+        if (checkWin(player)) {
+          board[i][j] = "";
+          return { i, j };
+        }
+        board[i][j] = "";
+      }
+    }
+  }
+  return null;
+}
+
 function findHighestScoredMove() {
   let bestScore = -Infinity;
   let bestMoves = [];
   
   for (let i = 0; i < boardSize; i++) {
     for (let j = 0; j < boardSize; j++) {
-      if (board[i][j] === "" && hasNeighbor(i, j)) {
-        const score = evaluatePosition(i, j);
+      if (board[i][j] === "" && hasNeighbor(i, j, 3)) {
+        const score = evaluatePositionAdvanced(i, j);
         if (score > bestScore) {
           bestScore = score;
           bestMoves = [{ i, j }];
@@ -304,84 +553,12 @@ function findHighestScoredMove() {
     }
   }
   
-  if (bestMoves.length > 0) {
-    return bestMoves[Math.floor(Math.random() * bestMoves.length)];
-  }
-  
-  return findAnyMove();
+  return bestMoves.length > 0 ? bestMoves[Math.floor(Math.random() * bestMoves.length)] : findAnyMove();
 }
 
-// --- ĐÁNH GIÁ VỊ TRÍ CHI TIẾT ---
-function evaluatePosition(x, y, player = "O") {
-  let totalScore = 0;
-  const patterns = {
-    "OOOOO": 100000, // 5 liên tiếp - thắng
-    " OOOOO ": 100000,
-    "XOOOO X": 5000,
-    "X OOOO X": 5000,
-    " OOOO ": 10000, // 4 mở 2 đầu
-    "XOOOO ": 1000,  // 4 mở 1 đầu
-    " OOOOX": 1000,
-    " OOO ": 1000,   // 3 mở 2 đầu
-    "XOOO ": 200,    // 3 mở 1 đầu
-    " OOOX": 200,
-    " OO ": 100,     // 2 mở 2 đầu
-    "XOO ": 10,      // 2 mở 1 đầu
-    " OOX": 10,
-    " O ": 5         // 1 mở 2 đầu
-  };
-  
-  const dirs = [[1,0],[0,1],[1,1],[1,-1]];
-  
-  for (let [dx, dy] of dirs) {
-    let pattern = "";
-    
-    // Lấy pattern 9 ô theo hướng
-    for (let k = -4; k <= 4; k++) {
-      const ni = x + dx * k;
-      const nj = y + dy * k;
-      
-      if (ni < 0 || nj < 0 || ni >= boardSize || nj >= boardSize) {
-        pattern += "X"; // Biên
-      } else if (ni === x && nj === y) {
-        pattern += "O"; // Vị trí đang xét
-      } else {
-        pattern += board[ni][nj] === "" ? " " : board[ni][nj];
-      }
-    }
-    
-    // So khớp pattern
-    for (let [key, value] of Object.entries(patterns)) {
-      if (pattern.includes(key)) {
-        totalScore += value;
-        break;
-      }
-    }
-  }
-  
-  return totalScore;
-}
-
-// --- KIỂM TRA Ô CÓ LÂN CẬN ---
-function hasNeighbor(i, j, distance = 2) {
-  for (let dx = -distance; dx <= distance; dx++) {
-    for (let dy = -distance; dy <= distance; dy++) {
-      if (dx === 0 && dy === 0) continue;
-      const ni = i + dx;
-      const nj = j + dy;
-      if (ni >= 0 && ni < boardSize && nj >= 0 && nj < boardSize && 
-          board[ni][nj] !== "") {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-// --- TÌM NƯỚC ĐI BẤT KỲ ---
 function findAnyMove() {
   const center = Math.floor(boardSize / 2);
-  if (board[center][center] === "") {
+  if (isValidMove(center, center) && board[center][center] === "") {
     return { i: center, j: center };
   }
   
@@ -393,7 +570,51 @@ function findAnyMove() {
   return null;
 }
 
-// --- HIỂN THỊ ---
+function hasNeighbor(i, j, distance = 2) {
+  for (let dx = -distance; dx <= distance; dx++) {
+    for (let dy = -distance; dy <= distance; dy++) {
+      if (dx === 0 && dy === 0) continue;
+      const ni = i + dx;
+      const nj = j + dy;
+      if (isValidMove(ni, nj) && board[ni][nj] !== "") {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function isValidMove(i, j) {
+  return i >= 0 && j >= 0 && i < boardSize && j < boardSize;
+}
+
+function getMoveCount() {
+  let count = 0;
+  for (let i = 0; i < boardSize; i++) {
+    for (let j = 0; j < boardSize; j++) {
+      if (board[i][j] !== "") count++;
+    }
+  }
+  return count;
+}
+
+function executeMove(move) {
+  document.querySelectorAll(".ai-highlight").forEach(c => c.classList.remove("ai-highlight"));
+  board[move.i][move.j] = "O";
+  lastAIMove = move;
+  render();
+  
+  if (checkWin("O")) {
+    statusEl.textContent = "🤖 AI thắng! Trí tuệ nhân tạo là bất khả chiến bại!";
+    gameOver = true;
+    loseAudio.currentTime = 0;
+    loseAudio.play();
+  } else {
+    statusEl.textContent = "Lượt của bạn!";
+  }
+}
+
+// --- HIỂN THỊ VÀ XỬ LÝ SỰ KIỆN ---
 function render() {
   const cells = document.querySelectorAll(".cell");
   cells.forEach((cell, idx) => {
@@ -407,7 +628,6 @@ function render() {
   });
 }
 
-// --- NGƯỜI CHƠI ---
 document.querySelectorAll(".cell").forEach(cell => {
   cell.addEventListener("click", () => {
     if (gameOver || aiThinking) return;
@@ -421,7 +641,7 @@ document.querySelectorAll(".cell").forEach(cell => {
       render();
       
       if (checkWin("X")) {
-        statusEl.textContent = "🎉 Bạn thắng!";
+        statusEl.textContent = "🎉 Bạn thắng! (Đây là điều không tưởng!)";
         gameOver = true;
         return;
       }
@@ -431,7 +651,6 @@ document.querySelectorAll(".cell").forEach(cell => {
   });
 });
 
-// --- NÚT CHƠI LẠI ---
 resetBtn.addEventListener("click", () => {
   gameOver = false;
   aiThinking = false;
